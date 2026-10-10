@@ -6,6 +6,8 @@ from pathlib import Path
 import re
 from typing import Any
 
+VALID_INVOICE_NUMBER_LENGTHS = frozenset({8, 20})
+
 
 @dataclass(frozen=True)
 class OCRLine:
@@ -76,18 +78,32 @@ def parse_decimal(value: Any) -> Decimal | None:
         return None
 
 
+def validate_invoice_number(value: Any) -> tuple[str | None, str]:
+    """Accept only common Chinese invoice-number lengths; never pad or truncate."""
+    if value is None or str(value).strip() == "":
+        return None, ""
+    number = re.sub(r"\s+", "", str(value))
+    if not number.isdigit():
+        return None, "发票号码包含非数字字符，已留空复核"
+    if len(number) not in VALID_INVOICE_NUMBER_LENGTHS:
+        return None, f"发票号码位数异常（{len(number)} 位），已留空复核"
+    return number, ""
+
+
 def record_from_cloud(index: int, path: str, fields: dict[str, Any]) -> InvoiceRecord:
     file_path = str(Path(path).resolve())
+    invoice_number, invoice_number_issue = validate_invoice_number(fields.get("invoice_number"))
     return InvoiceRecord(
         index=index,
         file_path=file_path,
         original_filename=Path(path).name,
-        invoice_number=str(fields.get("invoice_number") or "").strip() or None,
+        invoice_number=invoice_number,
         invoice_code=str(fields.get("invoice_code") or "").strip() or None,
         invoice_date=str(fields.get("invoice_date") or "").strip() or None,
         amount=parse_decimal(fields.get("amount")),
         tax=parse_decimal(fields.get("tax")),
         total=parse_decimal(fields.get("total")),
         seller_name=str(fields.get("seller_name") or "").strip() or None,
+        invoice_number_issue=invoice_number_issue,
         recognition_source="cloud (user-confirmed)",
     )

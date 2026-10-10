@@ -121,7 +121,8 @@ def process_pdf_page(
         record.seller_name = None
     elif not found_numbers:
         record.invoice_number = None
-        record.invoice_number_issue = "PDF页未找到唯一票面发票号码，页边界待人工确认"
+        if not record.invoice_number_issue or record.invoice_number_issue == "缺少发票号码":
+            record.invoice_number_issue = "PDF页未找到唯一票面发票号码，页边界待人工确认"
 
     if not pdf_lines and not ocr_lines:
         record.error = "PDF空白页或未检测到可识别文本"

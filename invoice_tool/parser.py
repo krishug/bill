@@ -4,7 +4,7 @@ import re
 from collections.abc import Iterable
 from decimal import Decimal
 
-from .models import InvoiceRecord, OCRLine, parse_decimal
+from .models import InvoiceRecord, OCRLine, parse_decimal, validate_invoice_number
 
 MONEY_RE = re.compile(
     r"(?<![\d])(?:[¥￥]\s*)?([+-]?\s*(?:\d{1,3}(?:[,，]\d{3})+|\d+)(?:\.\d{1,2})?)(?!\d)"
@@ -63,7 +63,9 @@ def _number_candidates(text: str, pattern: re.Pattern[str], label: str) -> list[
     return [match.group(1) for match in pattern.finditer(tail)]
 
 
-def _labelled_invoice_numbers(lines: list[OCRLine], rows: list[list[OCRLine]]) -> tuple[list[str], bool]:
+def _labelled_invoice_numbers(
+    lines: list[OCRLine], rows: list[list[OCRLine]]
+) -> tuple[list[str], bool, list[int]]:
     values: list[str] = []
     for row in rows:
         row_compact = _clean(_row_text(row))
@@ -111,7 +113,15 @@ def _labelled_invoice_numbers(lines: list[OCRLine], rows: list[list[OCRLine]]) -
                     continue
                 values.extend(match.group(1) for match in INVOICE_NO_RE.finditer(text))
     label_found = any("发票号码" in _clean(_row_text(row)) for row in rows)
-    return list(dict.fromkeys(values)), label_found
+    accepted: list[str] = []
+    invalid_lengths: list[int] = []
+    for value in dict.fromkeys(values):
+        normalized, issue = validate_invoice_number(value)
+        if normalized:
+            accepted.append(normalized)
+        elif "位数异常" in issue:
+            invalid_lengths.append(len(value))
+    return accepted, label_found, invalid_lengths
 
 
 def invoice_numbers_on_page(lines: list[OCRLine], image_size: tuple[int, int]) -> list[str]:
@@ -332,9 +342,13 @@ def parse_invoice(lines: list[OCRLine], image_size: tuple[int, int]) -> InvoiceR
         # tax field by itself is never converted to zero.
         tax = Decimal("0.00")
 
-    invoice_number_candidates, invoice_number_label_found = _labelled_invoice_numbers(lines, rows)
+    invoice_number_candidates, invoice_number_label_found, invalid_invoice_number_lengths = _labelled_invoice_numbers(lines, rows)
     invoice_number = invoice_number_candidates[0] if len(invoice_number_candidates) == 1 else None
-    if len(invoice_number_candidates) > 1:
+    if invalid_invoice_number_lengths:
+        lengths = "、".join(f"{length}位" for length in sorted(set(invalid_invoice_number_lengths)))
+        invoice_number_issue = f"发票号码位数异常（{lengths}），已留空复核"
+        invoice_number = None
+    elif len(invoice_number_candidates) > 1:
         invoice_number_issue = "票面出现多个不同发票号码，边界不明确，已留空"
     elif not invoice_number_candidates and invoice_number_label_found:
         invoice_number_issue = "发票号码识别不清，已留空复核"

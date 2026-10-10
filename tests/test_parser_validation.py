@@ -16,7 +16,7 @@ def ordinary_lines() -> list[OCRLine]:
         line("名称：甲方示例有限公司", 0, 42, 190),
         line("销售方信息", 420, 20),
         line("名称：乙方示例科技有限公司", 420, 42, 220),
-        line("发票号码：123456789012", 0, 82, 220),
+        line("发票号码：12345678901234567890", 0, 82, 300),
         line("项目金额 9999.99", 0, 150, 180),
         line("合计", 0, 220, 50),
         line("100.00", 240, 220, 70),
@@ -28,7 +28,7 @@ def ordinary_lines() -> list[OCRLine]:
 
 def test_extracts_labelled_totals_and_seller_not_unrelated_amounts() -> None:
     record = parse_invoice(ordinary_lines(), (1000, 1000))
-    assert record.invoice_number == "123456789012"
+    assert record.invoice_number == "12345678901234567890"
     assert record.amount == Decimal("100.00")
     assert record.tax == Decimal("6.00")
     assert record.total == Decimal("106.00")
@@ -40,23 +40,23 @@ def test_invoice_number_comes_only_from_its_label_and_preserves_leading_zeroes()
     lines = [
         line("统一社会信用代码/纳税人识别号：91310118759864955D", 0, 10, 360),
         line("发票代码：110012345678", 0, 40, 200),
-        line("发票号码：000123456789", 0, 70, 200),
+        line("发票号码：00001234567890123456", 0, 70, 240),
         line("开票日期：2026年10月12日", 0, 100, 220),
     ]
     record = parse_invoice(lines, (1000, 1000))
-    assert record.invoice_number == "000123456789"
+    assert record.invoice_number == "00001234567890123456"
     assert record.invoice_code == "110012345678"
     assert record.invoice_date == "2026-10-12"
 
 
 def test_unlabelled_numbers_and_ambiguous_invoice_numbers_are_not_guessed() -> None:
-    unlabelled = validate_record(parse_invoice([line("文件编号 123456789012", 0, 20)], (800, 600)))
+    unlabelled = validate_record(parse_invoice([line("文件编号 12345678901234567890", 0, 20)], (800, 600)))
     assert unlabelled.invoice_number is None
     assert "缺少发票号码" in unlabelled.validation_result
 
     ambiguous = validate_record(parse_invoice([
-        line("发票号码：123456789012", 0, 20, 180),
-        line("发票号码：123456789013", 0, 45, 180),
+        line("发票号码：12345678901234567890", 0, 20, 300),
+        line("发票号码：12345678901234567891", 0, 45, 300),
     ], (800, 600)))
     assert ambiguous.invoice_number is None
     assert any("多个不同发票号码" in issue for issue in ambiguous.validation_result)
@@ -67,8 +67,14 @@ def test_unlabelled_numbers_and_ambiguous_invoice_numbers_are_not_guessed() -> N
     ], (800, 600)))
     assert taxpayer_only.invoice_number is None
 
+    extra_digit = validate_record(parse_invoice([
+        line("发票号码：123456789012345678901", 0, 20, 300),
+    ], (800, 600)))
+    assert extra_digit.invoice_number is None
+    assert any("位数异常" in issue for issue in extra_digit.validation_result)
+
     unclear = validate_record(parse_invoice([
-        OCRLine("发票号码：000123456789", ((0, 10), (200, 10), (200, 25), (0, 25)), 0.40),
+        OCRLine("发票号码：00001234567890123456", ((0, 10), (240, 10), (240, 25), (0, 25)), 0.40),
     ], (800, 600)))
     assert unclear.invoice_number is None
     assert any("识别不清" in issue for issue in unclear.validation_result)
@@ -97,7 +103,7 @@ def test_missing_seller_name_requires_manual_review() -> None:
 
 def test_explicit_exemption_is_zero_tax_and_negative_invoice_is_allowed() -> None:
     exempt = [
-        line("发票号码：123456789012", 0, 0, 180),
+        line("发票号码：12345678901234567890", 0, 0, 300),
         line("销售方信息", 400, 20), line("名称：免税销售有限公司", 400, 42, 200),
         line("金额 44.05", 0, 90), line("不征税", 0, 120),
         line("价税合计（小写） ¥44.05", 0, 150, 240),
@@ -107,7 +113,7 @@ def test_explicit_exemption_is_zero_tax_and_negative_invoice_is_allowed() -> Non
     assert exempt_record.status == "成功"
 
     negative = [
-        line("发票号码：123456789013", 0, 0, 180),
+        line("发票号码：12345678901234567891", 0, 0, 300),
         line("销售方信息", 400, 20), line("名称：红字销售有限公司", 400, 42, 200),
         line("合计 -100.00 -6.00", 0, 100, 220),
         line("价税合计（小写） -106.00", 0, 140, 220),
@@ -156,11 +162,22 @@ def test_amount_tax_mismatch_requires_review_and_preserves_values() -> None:
 
 def test_small_rounding_difference_of_one_cent_is_accepted() -> None:
     record = parse_invoice([
-        line("发票号码：123456789014", 0, 0, 180),
+        line("发票号码：12345678901234567892", 0, 0, 300),
         line("销售方信息", 400, 20), line("名称：舍入销售有限公司", 400, 42, 200),
         line("合计 1.00 0.01", 0, 100, 180), line("价税合计（小写） 1.02", 0, 140, 220),
     ], (800, 600))
     assert validate_record(record).status == "成功"
+
+
+def test_total_below_amount_plus_tax_is_review_even_at_one_cent() -> None:
+    record = validate_record(parse_invoice([
+        line("发票号码：12345678901234567893", 0, 0, 300),
+        line("销售方信息", 400, 20), line("名称：少计销售有限公司", 400, 42, 200),
+        line("合计 1.00 0.01", 0, 100, 180), line("价税合计（小写）1.00", 0, 140, 220),
+    ], (800, 600)))
+    assert record.total == Decimal("1.00")
+    assert record.status == "待复核"
+    assert any("低于" in issue for issue in record.validation_result)
 
 
 def test_duplicate_invoice_and_duplicate_image_are_flagged_not_removed() -> None:
@@ -178,9 +195,9 @@ def test_duplicate_invoice_and_duplicate_image_are_flagged_not_removed() -> None
 def test_same_invoice_number_uses_seller_date_and_code_as_duplicate_evidence() -> None:
     from invoice_tool.models import InvoiceRecord
 
-    left = InvoiceRecord(1, "a.jpg", "a.jpg", invoice_number="000123456789", invoice_code="1000", invoice_date="2026-01-01", seller_name="同一公司")
-    matching = InvoiceRecord(2, "b.jpg", "b.jpg", invoice_number="000123456789", invoice_code="1000", invoice_date="2026-01-01", seller_name="同一公司")
-    different_seller = InvoiceRecord(3, "c.jpg", "c.jpg", invoice_number="000123456789", invoice_code="1000", invoice_date="2026-01-01", seller_name="另一公司")
+    left = InvoiceRecord(1, "a.jpg", "a.jpg", invoice_number="00000012345678901234", invoice_code="1000", invoice_date="2026-01-01", seller_name="同一公司")
+    matching = InvoiceRecord(2, "b.jpg", "b.jpg", invoice_number="00000012345678901234", invoice_code="1000", invoice_date="2026-01-01", seller_name="同一公司")
+    different_seller = InvoiceRecord(3, "c.jpg", "c.jpg", invoice_number="00000012345678901234", invoice_code="1000", invoice_date="2026-01-01", seller_name="另一公司")
     for item in (left, matching, different_seller):
         validate_record(item)
     mark_duplicates([left, matching, different_seller])

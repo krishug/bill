@@ -15,7 +15,7 @@ def invoice_lines() -> list[OCRLine]:
 
     return [
         box("销售方信息", 400, 10), box("名称：批次测试公司", 400, 30),
-        box("发票号码：998877665544", 0, 50, 200), box("合计 10.00 0.60", 0, 80),
+        box("发票号码：00009887766554412345", 0, 50, 240), box("合计 10.00 0.60", 0, 80),
         box("价税合计（小写）10.60", 0, 110, 210),
     ]
 
@@ -53,7 +53,7 @@ def test_excel_has_three_sheets_numeric_money_filters_and_image_link(tmp_path: P
     assert [detail.cell(1, column).value for column in range(1, 7)] == [
         "序号", "发票号码", "金额", "税额", "价税合计金额", "销售方公司名称",
     ]
-    assert detail["B2"].value == "998877665544"
+    assert detail["B2"].value == "00009887766554412345"
     assert detail["B2"].data_type == "s"
     assert detail["C2"].value == 10
     assert detail["C2"].number_format == "0.00"
@@ -72,7 +72,7 @@ def test_excel_has_three_sheets_numeric_money_filters_and_image_link(tmp_path: P
     baseline = tmp_path / "baseline.csv"
     baseline.write_text(
         "filename,page_number,invoice_number,amount,tax,total,seller_name\n"
-        "one.png,,998877665544,10.00,0.60,10.60,批次测试公司\n",
+        "one.png,,00009887766554412345,10.00,0.60,10.60,批次测试公司\n",
         encoding="utf-8",
     )
     metrics = evaluate(baseline, destination)

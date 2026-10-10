@@ -3,7 +3,7 @@ import json
 
 from invoice_tool import cloud
 from invoice_tool.cloud import VisionConfig, cloud_fallback_needed, extract_with_vision
-from invoice_tool.models import InvoiceRecord, parse_decimal
+from invoice_tool.models import InvoiceRecord, parse_decimal, record_from_cloud, validate_invoice_number
 
 
 def test_decimal_parsing_does_not_treat_blank_as_zero() -> None:
@@ -12,6 +12,14 @@ def test_decimal_parsing_does_not_treat_blank_as_zero() -> None:
     assert parse_decimal("￥0.00") == Decimal("0.00")
     assert parse_decimal("1,2,3.00") is None
     assert parse_decimal("NaN") is None
+
+
+def test_invoice_number_lengths_are_validated_without_truncation() -> None:
+    assert validate_invoice_number("00123456") == ("00123456", "")
+    assert validate_invoice_number("00001234567890123456") == ("00001234567890123456", "")
+    record = record_from_cloud(1, "invoice.jpg", {"invoice_number": "123456789012345678901"})
+    assert record.invoice_number is None
+    assert "位数异常" in record.invoice_number_issue
 
 
 def test_cloud_is_disabled_without_explicit_api_key(monkeypatch, tmp_path) -> None:
