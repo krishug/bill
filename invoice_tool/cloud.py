@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .models import InvoiceRecord
+from .models import InvoiceRecord, record_from_cloud
+from .validation import validate_record
 
 OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1"
 OPENCODE_GO_VISION_MODEL = "deepseek-v4-flash-vision-exp"
@@ -79,6 +80,53 @@ def cloud_fallback_needed(record: InvoiceRecord) -> bool:
             for issue in record.validation_result
         )
     )
+
+
+def apply_cloud_result(record: InvoiceRecord, fields: dict[str, Any]) -> InvoiceRecord:
+    """Apply a confirmed cloud result without hiding local/cloud disagreement."""
+    cloud_record = record_from_cloud(record.index, record.file_path, fields)
+    conflicts: list[str] = []
+
+    if cloud_record.invoice_number is not None:
+        if record.invoice_number and record.invoice_number != cloud_record.invoice_number:
+            record.invoice_number = None
+            record.invoice_number_issue = "本地与云端发票号码不一致，号码已留空待人工核对"
+            conflicts.append(record.invoice_number_issue)
+        else:
+            record.invoice_number = cloud_record.invoice_number
+            record.invoice_number_issue = ""
+    elif not record.invoice_number:
+        record.invoice_number_issue = (
+            cloud_record.invoice_number_issue or "云端未返回可用的发票号码，留空待人工复核"
+        )
+    elif cloud_record.invoice_number_issue:
+        conflicts.append("云端发票号码格式异常，保留本地号码并待人工复核")
+
+    for field_name, label in (
+        ("invoice_code", "发票代码"),
+        ("invoice_date", "开票日期"),
+        ("amount", "金额"),
+        ("tax", "税额"),
+        ("total", "价税合计"),
+        ("seller_name", "销售方公司名称"),
+    ):
+        local_value = getattr(record, field_name)
+        cloud_value = getattr(cloud_record, field_name)
+        if cloud_value is None:
+            continue  # A null cloud field never erases an existing local value.
+        if local_value is not None and local_value != cloud_value:
+            conflicts.append(f"本地与云端{label}不一致，需人工确认")
+        setattr(record, field_name, cloud_value)
+
+    record.recognition_source = cloud_record.recognition_source
+    record.error = ""
+    validate_record(record)
+    for issue in conflicts:
+        if issue not in record.validation_result:
+            record.validation_result.append(issue)
+    if conflicts and record.status != "失败":
+        record.status = "待复核"
+    return record
 
 
 def extract_with_vision(

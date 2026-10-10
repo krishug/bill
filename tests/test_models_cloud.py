@@ -2,7 +2,7 @@ from decimal import Decimal
 import json
 
 from invoice_tool import cloud
-from invoice_tool.cloud import VisionConfig, cloud_fallback_needed, extract_with_vision
+from invoice_tool.cloud import VisionConfig, apply_cloud_result, cloud_fallback_needed, extract_with_vision
 from invoice_tool.models import InvoiceRecord, parse_decimal, record_from_cloud, validate_invoice_number
 
 
@@ -87,6 +87,50 @@ def test_cloud_fallback_only_eligible_for_failures_or_field_issues() -> None:
     assert not cloud_fallback_needed(duplicate_only)
     assert cloud_fallback_needed(missing_field)
     assert cloud_fallback_needed(image_failure)
+
+
+def test_cloud_result_preserves_null_local_fields_and_flags_source_conflicts() -> None:
+    local = InvoiceRecord(
+        1,
+        "invoice.jpg",
+        "invoice.jpg",
+        invoice_number="00001234567890123456",
+        amount=Decimal("100.00"),
+        tax=Decimal("6.00"),
+        total=Decimal("106.00"),
+        seller_name="本地销售有限公司",
+    )
+    local.original_extracted_fields = local.as_cloud_fields()
+    apply_cloud_result(local, {"invoice_number": None, "amount": None, "tax": None, "total": None, "seller_name": None})
+    assert local.invoice_number == "00001234567890123456"
+    assert local.amount == Decimal("100.00")
+    assert local.status == "成功"
+
+    cloud = InvoiceRecord(
+        2,
+        "invoice2.jpg",
+        "invoice2.jpg",
+        invoice_number="00001234567890123456",
+        amount=Decimal("100.00"),
+        tax=Decimal("6.00"),
+        total=Decimal("106.00"),
+        seller_name="本地销售有限公司",
+    )
+    cloud.original_extracted_fields = cloud.as_cloud_fields()
+    apply_cloud_result(cloud, {
+        "invoice_number": "12345678901234567890",
+        "invoice_code": None,
+        "invoice_date": None,
+        "amount": "101.00",
+        "tax": "6.00",
+        "total": "107.00",
+        "seller_name": "云端销售有限公司",
+    })
+    assert cloud.invoice_number is None
+    assert cloud.amount == Decimal("101.00")
+    assert cloud.original_extracted_fields["amount"] == "100.00"
+    assert cloud.status == "待复核"
+    assert any("本地与云端" in issue for issue in cloud.validation_result)
 
 
 def test_cloud_request_uses_configured_endpoint_and_session_headers(tmp_path, monkeypatch) -> None:

@@ -9,9 +9,9 @@ from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image, ImageOps, ImageTk
 
-from .cloud import VisionConfig, cloud_fallback_needed, extract_with_vision
+from .cloud import VisionConfig, apply_cloud_result, cloud_fallback_needed, extract_with_vision
 from .excel_export import export_excel
-from .models import InvoiceRecord, parse_decimal, record_from_cloud
+from .models import InvoiceRecord, parse_decimal
 from .validation import mark_duplicates, validate_record
 
 
@@ -363,17 +363,7 @@ class InvoiceApp:
         record = next((item for item in self.records if item.index == index), None)
         if not record:
             return
-        cloud_record = record_from_cloud(index, record.file_path, fields)
-        record.invoice_number = cloud_record.invoice_number
-        record.invoice_code = cloud_record.invoice_code
-        record.invoice_date = cloud_record.invoice_date
-        record.amount = cloud_record.amount
-        record.tax = cloud_record.tax
-        record.total = cloud_record.total
-        record.seller_name = cloud_record.seller_name
-        record.recognition_source = cloud_record.recognition_source
-        record.error = ""
-        validate_record(record)
+        apply_cloud_result(record, fields)
         mark_duplicates(self.records)
         self._refresh_table()
         self.tree.selection_set(str(record.index))
