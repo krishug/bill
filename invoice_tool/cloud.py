@@ -14,6 +14,35 @@ from .models import InvoiceRecord
 
 OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1"
 OPENCODE_GO_VISION_MODEL = "deepseek-v4-flash-vision-exp"
+LOCAL_ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
+
+
+def _read_local_env() -> dict[str, str]:
+    """Read simple KEY=VALUE settings; the ignored .env is never logged."""
+    settings: dict[str, str] = {}
+    try:
+        lines = LOCAL_ENV_PATH.read_text(encoding="utf-8-sig").splitlines()
+    except OSError:
+        return settings
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        name, value = name.strip(), value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        if name:
+            settings[name] = value
+    return settings
+
+
+def _setting(name: str, local: dict[str, str]) -> str:
+    return os.getenv(name, "").strip() or local.get(name, "").strip()
 
 
 @dataclass(frozen=True)
@@ -26,13 +55,14 @@ class VisionConfig:
     def from_environment(cls) -> "VisionConfig | None":
         # Use a dedicated variable so credentials configured for unrelated
         # services are never forwarded to the default endpoint by accident.
-        key = os.getenv("INVOICE_VISION_API_KEY") or os.getenv("OPENCODE_GO_API_KEY")
+        local = _read_local_env()
+        key = _setting("INVOICE_VISION_API_KEY", local) or _setting("OPENCODE_GO_API_KEY", local)
         if not key:
             return None
         return cls(
             api_key=key,
-            base_url=os.getenv("INVOICE_VISION_BASE_URL", OPENCODE_GO_BASE_URL).rstrip("/"),
-            model=os.getenv("INVOICE_VISION_MODEL", OPENCODE_GO_VISION_MODEL),
+            base_url=(_setting("INVOICE_VISION_BASE_URL", local) or OPENCODE_GO_BASE_URL).rstrip("/"),
+            model=_setting("INVOICE_VISION_MODEL", local) or OPENCODE_GO_VISION_MODEL,
         )
 
 

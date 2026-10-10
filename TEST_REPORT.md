@@ -12,7 +12,7 @@
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-记录结果：**34 passed，0 failed**。运行时出现 5 条 PyMuPDF/SWIG 类型的弃用警告，无测试失败。
+记录结果：**35 passed，0 failed**。运行时出现 5 条 PyMuPDF/SWIG 类型的弃用警告，无测试失败。
 
 另外，`python -m pip check` 输出 `No broken requirements found`；Tkinter GUI 窗口、PDF 页预览及人工修正对话框冒烟测试通过。
 

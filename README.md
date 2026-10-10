@@ -31,16 +31,16 @@ Windows 10/11 桌面工具：本地处理 JPG、JPEG、PNG 图片和 PDF 发票�
 
 ## 可选云端识别
 
-默认没有 Go/API key 时云端功能关闭，本地 OCR 完全独立可用。OpenCode Go 可使用官方列出的视觉模型 `deepseek-v4-flash-vision-exp` 和兼容 endpoint。复制你的 OpenCode Go API key，在启动 GUI **之前**设置专用环境变量（可参考 `.env.example`；程序不会自动读取 `.env`）：
+默认没有 Go/API key 时云端功能关闭，本地 OCR 完全独立可用。OpenCode Go 可使用官方列出的视觉模型 `deepseek-v4-flash-vision-exp` 和兼容 endpoint。可以复制 `.env.example` 为 `.env`，填入你的 OpenCode Go API key：
 
 ```bat
-set OPENCODE_GO_API_KEY=
-start.bat
+copy .env.example .env
+notepad .env
 ```
 
-将 API key 粘贴在等号后再启动程序。
+在 `.env` 中填写 `OPENCODE_GO_API_KEY` 的值，保存并启动 `start.bat`。程序会读取项目目录下的 `.env`；该文件已加入 `.gitignore`，不会随源码提交。也可以在启动前设置同名 Windows 环境变量；进程环境变量优先于 `.env` 配置。
 
-Go 默认使用 `https://opencode.ai/zen/go/v1` 和上述 vision model，并发送专用 User-Agent 及稳定的 `x-opencode-session` 会话标识。其他 OpenAI-compatible 视觉服务可改用 `INVOICE_VISION_API_KEY`，并按需设置 `INVOICE_VISION_BASE_URL`、`INVOICE_VISION_MODEL`。工具不会读取 OpenCode GUI/TUI 登录状态；需要把 Go key 显式放入此程序专用的环境变量。**配置密钥不会自动上传图片**：必须选中字段有问题或识别失败的记录、点击云端按钮并确认具体文件后才发起请求。
+Go 默认使用 `https://opencode.ai/zen/go/v1` 和上述 vision model，并发送专用 User-Agent 及稳定的 `x-opencode-session` 会话标识。其他 OpenAI-compatible 视觉服务可在 `.env` 中配置 `INVOICE_VISION_API_KEY`、`INVOICE_VISION_BASE_URL`、`INVOICE_VISION_MODEL`。工具不会读取 OpenCode GUI/TUI 登录状态。**配置密钥不会自动上传图片**：必须选中字段有问题或识别失败的记录、点击云端按钮并确认具体文件后才发起请求。
 
 OpenCode Go 官方文档将服务定位为 coding-agent 请求；通过它做发票图片提取前，请确认该用途符合服务当前条款和模型额度。由于没有配置你的 Go key，本项目只验证了本地 OCR 和云请求构造，未对 Go 服务发起真实图片请求。
 

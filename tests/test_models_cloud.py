@@ -14,15 +14,19 @@ def test_decimal_parsing_does_not_treat_blank_as_zero() -> None:
     assert parse_decimal("NaN") is None
 
 
-def test_cloud_is_disabled_without_explicit_api_key(monkeypatch) -> None:
+def test_cloud_is_disabled_without_explicit_api_key(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("INVOICE_VISION_API_KEY", raising=False)
     monkeypatch.delenv("OPENCODE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENCODE_GO_API_KEY", raising=False)
+    monkeypatch.setattr(cloud, "LOCAL_ENV_PATH", tmp_path / ".env")
     assert VisionConfig.from_environment() is None
 
 
-def test_other_service_credentials_do_not_enable_invoice_upload(monkeypatch) -> None:
+def test_other_service_credentials_do_not_enable_invoice_upload(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("INVOICE_VISION_API_KEY", raising=False)
     monkeypatch.setenv("OPENCODE_API_KEY", "not-an-invoice-vision-key")
+    monkeypatch.delenv("OPENCODE_GO_API_KEY", raising=False)
+    monkeypatch.setattr(cloud, "LOCAL_ENV_PATH", tmp_path / ".env")
     assert VisionConfig.from_environment() is None
 
 
@@ -36,15 +40,36 @@ def test_cloud_endpoint_can_be_configured_without_enabling_automatic_upload(monk
     assert config.model == "vision-model"
 
 
-def test_opencode_go_key_uses_documented_vision_endpoint_by_default(monkeypatch) -> None:
+def test_opencode_go_key_uses_documented_vision_endpoint_by_default(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("INVOICE_VISION_API_KEY", raising=False)
     monkeypatch.setenv("OPENCODE_GO_API_KEY", "go-key")
     monkeypatch.delenv("INVOICE_VISION_BASE_URL", raising=False)
     monkeypatch.delenv("INVOICE_VISION_MODEL", raising=False)
+    monkeypatch.setattr(cloud, "LOCAL_ENV_PATH", tmp_path / ".env")
     config = VisionConfig.from_environment()
     assert config is not None
     assert config.base_url == "https://opencode.ai/zen/go/v1"
     assert config.model == "deepseek-v4-flash-vision-exp"
+
+
+def test_dotenv_file_loads_go_key_and_environment_overrides_it(monkeypatch, tmp_path) -> None:
+    local_env = tmp_path / ".env"
+    local_env.write_text(
+        '# local-only config\nOPENCODE_GO_API_KEY="file-key"\n'
+        "INVOICE_VISION_BASE_URL=https://vision.example/v1/\nINVOICE_VISION_MODEL=file-model\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cloud, "LOCAL_ENV_PATH", local_env)
+    for key in ("INVOICE_VISION_API_KEY", "OPENCODE_GO_API_KEY", "INVOICE_VISION_BASE_URL", "INVOICE_VISION_MODEL"):
+        monkeypatch.delenv(key, raising=False)
+    config = VisionConfig.from_environment()
+    assert config is not None
+    assert config.api_key == "file-key"
+    assert config.base_url == "https://vision.example/v1"
+    assert config.model == "file-model"
+
+    monkeypatch.setenv("OPENCODE_GO_API_KEY", "environment-key")
+    assert VisionConfig.from_environment().api_key == "environment-key"
 
 
 def test_cloud_fallback_only_eligible_for_failures_or_field_issues() -> None:
